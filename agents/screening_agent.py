@@ -4,7 +4,7 @@ from typing_extensions import TypedDict
 from langchain_core.messages import HumanMessage, SystemMessage
 from job_description import JOB_DESCRIPTION
 from dotenv import load_dotenv
-
+import json
 load_dotenv()
 
 '''
@@ -36,11 +36,18 @@ class QuestionFormat(TypedDict):
     question4: str
     question5: str
 
+class FeedbackOutput(TypedDict):
+    result_reason: str
+    result: bool
+
+
 class ScreeningAgent(TypedDict):
-    messages: MessagesState #all the messages in the conversation
     result: bool #the result of the screening
     questions: QuestionFormat #the questions to ask the user
     job_description: str #the job description
+    responses: list
+    feedback_input: dict
+    feedback_output: str
 
 
 
@@ -65,9 +72,32 @@ def generate_questions(state: ScreeningAgent) -> QuestionFormat:
 
 def ask_questions(state: ScreeningAgent) -> ScreeningAgent:
     """Ask the questions to the user"""
+    questions = state["questions"]
+    responses = []
+    for question in questions:
+        responses.append(input(questions.get(question)))
+
+    return {"responses" : responses}
 
 def feedback_agent(state: ScreeningAgent) -> ScreeningAgent:
     """Generate feedback for the user's answers"""
+    questions = state["questions"]
+    responses = state["responses"]
+    job_description = state["job_description"]
+    feedback_input = {}
+    for i, key in enumerate(questions):
+        feedback_input[questions[key]] = responses[i]
+    
+    model = ChatAnthropic(
+        model = "claude-sonnet-4-5",
+    )
+    model = model.with_structured_output(FeedbackOutput, method = "json_schema")
+    response = model.invoke([
+        SystemMessage(content=f"You are a skilled interviewer tasked with judging an initial screening call. Decide based on user responses if the candidate clears this round. Provide a rationale and a final result (Pass: True / Fail: False) Here is the job description {job_description}"),
+        HumanMessage(content=json.dumps(feedback_input, indent=2))]
+    )
+
+    return {"result": response["result"], "feedback_output":response["result_reason"] }
 
 
 # Graph Definition
@@ -75,10 +105,14 @@ graph = StateGraph(ScreeningAgent)
 
 # add nodes
 graph.add_node("generate_questions", generate_questions)
+graph.add_node("ask_questions", ask_questions)
+graph.add_node("feedback_agent",feedback_agent )
 
 # add edges
 graph.add_edge(START, "generate_questions")
-graph.add_edge("generate_questions", END)
+graph.add_edge("generate_questions","ask_questions")
+graph.add_edge("ask_questions","feedback_agent")
+graph.add_edge("feedback_agent", END)
 
 # compile
 compiled_graph = graph.compile()
@@ -89,6 +123,8 @@ result = compiled_graph.invoke({
     "job_description": JOB_DESCRIPTION
 })
 
-print(result["questions"])
-
+# print(result["questions"])
+# print(result["responses"])
+print(result["result"])
+print(result["feedback_output"])
     
