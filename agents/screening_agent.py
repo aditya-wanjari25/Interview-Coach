@@ -1,6 +1,8 @@
 from langchain_anthropic import ChatAnthropic
 from langgraph.graph import StateGraph, START, END, MessagesState
 from typing_extensions import TypedDict
+from langgraph.types import interrupt, Command
+from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.messages import HumanMessage, SystemMessage
 from job_description import JOB_DESCRIPTION
 from dotenv import load_dotenv
@@ -73,11 +75,25 @@ def generate_questions(state: ScreeningAgent) -> QuestionFormat:
 def ask_questions(state: ScreeningAgent) -> ScreeningAgent:
     """Ask the questions to the user"""
     questions = state["questions"]
-    responses = []
-    for question in questions:
-        responses.append(input(questions.get(question)))
+    responses = state.get("responses", [])    
+    
+    # find out which question we are now
+    idx = len(responses)
+    keys = list(questions.keys())
+    if idx >= len(keys):
+        return {"responses": responses}
+    
+    current_key = keys[idx]
+    answer = interrupt({"question": questions[current_key], "question_key": current_key})
 
-    return {"responses" : responses}
+    responses = responses + [answer]
+    return {"responses": responses}
+
+def should_continue_asking(state: ScreeningAgent) -> str:
+    if len(state.get("responses", [])) < len(state["questions"]):
+        return "ask_questions"
+    return "feedback_agent"
+
 
 def feedback_agent(state: ScreeningAgent) -> ScreeningAgent:
     """Generate feedback for the user's answers"""
@@ -111,20 +127,22 @@ graph.add_node("feedback_agent",feedback_agent )
 # add edges
 graph.add_edge(START, "generate_questions")
 graph.add_edge("generate_questions","ask_questions")
-graph.add_edge("ask_questions","feedback_agent")
+graph.add_conditional_edges("ask_questions", should_continue_asking)
 graph.add_edge("feedback_agent", END)
 
 # compile
-compiled_graph = graph.compile()
+checkpointer = MemorySaver()
+compiled_graph = graph.compile(checkpointer=checkpointer)
 
+config = {"configurable": {"thread_id": "session-1"}}
 
-# run the graph
-result = compiled_graph.invoke({
-    "job_description": JOB_DESCRIPTION
-})
+result = compiled_graph.invoke({"job_description": JOB_DESCRIPTION}, config=config)
 
-# print(result["questions"])
-# print(result["responses"])
+# keep resuming until there's no more interrupt
+while "__interrupt__" in result:
+    payload = result["__interrupt__"][0].value
+    answer = input(payload["question"])
+    result = compiled_graph.invoke(Command(resume=answer), config=config)
+
 print(result["result"])
 print(result["feedback_output"])
-    
