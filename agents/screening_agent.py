@@ -6,6 +6,8 @@ from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.messages import HumanMessage, SystemMessage
 from job_description import JOB_DESCRIPTION
 from dotenv import load_dotenv
+from langchain_core.callbacks import get_usage_metadata_callback
+
 import json
 load_dotenv()
 
@@ -63,12 +65,20 @@ def generate_questions(state: ScreeningAgent) -> QuestionFormat:
     )
     model = model.with_structured_output(QuestionFormat, method="json_schema")
 
-    response = model.invoke(
-        [
-            SystemMessage(content="You are a helpful assistant that generates 5 questions for an initial screening interview."),
-            HumanMessage(content=f"Generate questions for the user to answer based on the following job description: {state['job_description']}")
-        ]
-    )
+    response = model.invoke([
+            SystemMessage(
+                content=[{
+                    "type": "text",
+                    "text": "You are a helpful assistant that generates 5 questions for an initial screening interview.",
+                
+                }]
+            ),
+            HumanMessage(content=[{
+                "type": "text",
+                "text": f"Generate questions based on job description: {state['job_description']}",
+                "cache_control": {"type": "ephemeral"}
+            }])
+        ])
     
     return {"questions": response}
 
@@ -109,9 +119,16 @@ def feedback_agent(state: ScreeningAgent) -> ScreeningAgent:
     )
     model = model.with_structured_output(FeedbackOutput, method = "json_schema")
     response = model.invoke([
-        SystemMessage(content=f"You are a skilled interviewer tasked with judging an initial screening call. Decide based on user responses if the candidate clears this round. Provide a rationale and a final result (Pass: True / Fail: False) Here is the job description {job_description}"),
-        HumanMessage(content=json.dumps(feedback_input, indent=2))]
-    )
+                SystemMessage(content=[{
+                    "type": "text",
+                    "text": f"You are a skilled interviewer tasked with judging an initial screening call. Decide based on user responses if the candidate clears this round. Provide feedback to the candidate on how they would have improved on their answers and a final result (Pass: True / Fail: False). Here is the job description: {job_description}"
+                }]),
+                HumanMessage(content=[{
+                    "type": "text",
+                    "text": json.dumps(feedback_input, indent=2),
+                    "cache_control": {"type": "ephemeral"}
+                }])
+            ])
 
     return {"result": response["result"], "feedback_output":response["result_reason"] }
 
@@ -136,13 +153,21 @@ compiled_graph = graph.compile(checkpointer=checkpointer)
 
 config = {"configurable": {"thread_id": "session-1"}}
 
-result = compiled_graph.invoke({"job_description": JOB_DESCRIPTION}, config=config)
+# result = compiled_graph.invoke({"job_description": JOB_DESCRIPTION}, config=config)
 
-# keep resuming until there's no more interrupt
-while "__interrupt__" in result:
-    payload = result["__interrupt__"][0].value
-    answer = input(payload["question"])
-    result = compiled_graph.invoke(Command(resume=answer), config=config)
+with get_usage_metadata_callback() as cb:
+    result = compiled_graph.invoke({"job_description": JOB_DESCRIPTION}, config=config)
 
-print(result["result"])
-print(result["feedback_output"])
+    while "__interrupt__" in result:
+        payload = result["__interrupt__"][0].value
+        answer = input(payload["question"])
+        result = compiled_graph.invoke(Command(resume=answer), config=config)
+
+    print(result["result"])
+    print(result["feedback_output"])
+
+print()
+for model_name, usage in cb.usage_metadata.items():
+    print(f"{model_name}")
+    for key, value in usage.items():
+        print(f"  {key:<28}: {value}")
