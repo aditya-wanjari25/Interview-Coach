@@ -186,12 +186,8 @@ graph.add_edge("compile_feedback_input", "decider_agent")
 graph.add_edge("feedback_agent", END)
 graph.add_edge("decider_agent", END)
 
-# compile
-checkpointer = MemorySaver()
-compiled_graph = graph.compile(checkpointer=checkpointer)
-
-
 if __name__ == "__main__":
+    compiled_graph = graph.compile(checkpointer=MemorySaver())
     config = {"configurable": {"thread_id": "session-1"}}
 
     with get_usage_metadata_callback() as cb:

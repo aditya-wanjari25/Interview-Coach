@@ -1,11 +1,31 @@
+import os
 import uuid
-from fastapi import FastAPI, HTTPException
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 from langgraph.types import Command
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from psycopg_pool import AsyncConnectionPool
 from typing import Optional
-from agents.screening_agent import compiled_graph
+from agents.screening_agent import graph
 
-app = FastAPI()
+DATABASE_URL = os.environ["DATABASE_URL"]
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async with AsyncConnectionPool(
+        conninfo=DATABASE_URL,
+        max_size=20,
+        kwargs={"autocommit": True, "prepare_threshold": 0},
+    ) as pool:
+        checkpointer = AsyncPostgresSaver(pool)
+        await checkpointer.setup()
+        app.state.compiled_graph = graph.compile(checkpointer=checkpointer)
+        yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 class StartInterviewRequest(BaseModel):
@@ -33,12 +53,12 @@ def root():
     return {"hello": "this is root!"}
 
 @app.post("/interview/start", response_model=StartInterviewResponse)
-async def start_interview(request: StartInterviewRequest):
+async def start_interview(request: Request, body: StartInterviewRequest):
     session_id = str(uuid.uuid4())
     config = {"configurable": {"thread_id": session_id}}
 
-    result = compiled_graph.invoke(
-        {"job_description": request.job_description},
+    result = await request.app.state.compiled_graph.ainvoke(
+        {"job_description": body.job_description},
         config=config,
     )
 
@@ -57,11 +77,11 @@ async def start_interview(request: StartInterviewRequest):
 
 
 @app.post("/interview/answer", response_model=AnswerResponse)
-async def submit_answer(request: AnswerRequest):
-    config = {"configurable": {"thread_id": request.session_id}}
+async def submit_answer(request: Request, body: AnswerRequest):
+    config = {"configurable": {"thread_id": body.session_id}}
 
     try:
-        result = compiled_graph.invoke(Command(resume=request.answer), config=config)
+        result = await request.app.state.compiled_graph.ainvoke(Command(resume=body.answer), config=config)
     except Exception:
         raise HTTPException(status_code=404, detail="Session not found or already completed")
 
