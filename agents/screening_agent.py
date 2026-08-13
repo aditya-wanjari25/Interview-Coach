@@ -190,21 +190,23 @@ graph.add_edge("decider_agent", END)
 checkpointer = MemorySaver()
 compiled_graph = graph.compile(checkpointer=checkpointer)
 
-config = {"configurable": {"thread_id": "session-1"}}
 
-with get_usage_metadata_callback() as cb:
-    result = compiled_graph.invoke({"job_description": JOB_DESCRIPTION}, config=config)
+if __name__ == "__main__":
+    config = {"configurable": {"thread_id": "session-1"}}
 
-    while "__interrupt__" in result:
-        payload = result["__interrupt__"][0].value
-        answer = input(payload["question"])
-        result = compiled_graph.invoke(Command(resume=answer), config=config)
+    with get_usage_metadata_callback() as cb:
+        result = compiled_graph.invoke({"job_description": JOB_DESCRIPTION}, config=config)
 
-    print(result["result"])
-    print(result["feedback_output"])
+        while "__interrupt__" in result:
+            payload = result["__interrupt__"][0].value
+            answer = input(payload["question"])
+            result = compiled_graph.invoke(Command(resume=answer), config=config)
 
-print()
-for model_name, usage in cb.usage_metadata.items():
-    print(f"{model_name}")
-    for key, value in usage.items():
-        print(f"  {key:<28}: {value}")
+        print(result["result"])
+        print(result["feedback_output"])
+
+    print()
+    for model_name, usage in cb.usage_metadata.items():
+        print(f"{model_name}")
+        for key, value in usage.items():
+            print(f"  {key:<28}: {value}")
