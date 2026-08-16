@@ -59,6 +59,7 @@ class ScreeningAgent(TypedDict):
     responses: list
     feedback_input: dict
     feedback_output: FeedbackOutput
+    user_id: str
 
 
 def generate_questions(state: ScreeningAgent) -> dict:

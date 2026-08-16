@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 from langgraph.types import Command
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from langgraph.store.postgres.aio import AsyncPostgresStore  
 from psycopg_pool import AsyncConnectionPool
 from typing import Optional
 from agents.screening_agent import graph
@@ -19,9 +20,12 @@ async def lifespan(app: FastAPI):
         max_size=20,
         kwargs={"autocommit": True, "prepare_threshold": 0},
     ) as pool:
-        checkpointer = AsyncPostgresSaver(pool)
-        await checkpointer.setup()
+        checkpointer = AsyncPostgresSaver(pool) #short term memory
+        postgres_store = AsyncPostgresStore(pool) #long term memory
+        await checkpointer.setup() 
+        await postgres_store.setup()
         app.state.compiled_graph = graph.compile(checkpointer=checkpointer)
+        app.state.store = postgres_store
         yield
 
 
@@ -30,6 +34,7 @@ app = FastAPI(lifespan=lifespan)
 
 class StartInterviewRequest(BaseModel):
     job_description: str
+    user_id: str
 
 
 class StartInterviewResponse(BaseModel):
@@ -58,7 +63,7 @@ async def start_interview(request: Request, body: StartInterviewRequest):
     config = {"configurable": {"thread_id": session_id}}
 
     result = await request.app.state.compiled_graph.ainvoke(
-        {"job_description": body.job_description},
+        {"job_description": body.job_description, "user_id": body.user_id},
         config=config,
     )
 
