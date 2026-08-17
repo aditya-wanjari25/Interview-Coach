@@ -24,7 +24,7 @@ async def lifespan(app: FastAPI):
         postgres_store = AsyncPostgresStore(pool) #long term memory
         await checkpointer.setup() 
         await postgres_store.setup()
-        app.state.compiled_graph = graph.compile(checkpointer=checkpointer)
+        app.state.compiled_graph = graph.compile(checkpointer=checkpointer, store=postgres_store)
         app.state.store = postgres_store
         yield
 
@@ -47,9 +47,10 @@ class AnswerRequest(BaseModel):
     answer: str
 
 class AnswerResponse(BaseModel):
-    status: str  # "in_progress" or "completed"
+    status: str  # "in_progress", "awaiting_menu_choice", or "completed"
     question: Optional[str] = None
     question_key: Optional[str] = None
+    menu: Optional[list[str]] = None
     result: Optional[bool] = None
     feedback_output: Optional[str] = None
 
@@ -92,6 +93,15 @@ async def submit_answer(request: Request, body: AnswerRequest):
 
     if "__interrupt__" in result:
         payload = result["__interrupt__"][0].value
+
+        if "menu" in payload:
+            return AnswerResponse(
+                status="awaiting_menu_choice",
+                menu=payload["menu"],
+                result=payload.get("result"),
+                feedback_output=payload.get("feedback_output"),
+            )
+
         return AnswerResponse(
             status="in_progress",
             question=payload["question"],
