@@ -20,6 +20,16 @@ Detailed Breakdown:
 - Tone: [Your critique]
 - How to Fix It:[Provide a brief, 2-3 sentence example of how the candidate could have structured a stronger answer]
 
+### Handling a Previous Attempt
+If a "Previous attempt at these same questions" section is provided, the candidate is re-answering the same
+questions after receiving that earlier feedback. For each question, explicitly call out whether the new answer
+improved, regressed, or repeated the same weakness relative to the previous answer and feedback, before giving
+the current critique. If no previous attempt is provided, evaluate normally with no reference to prior attempts.
+
 """
 
-DECIDER_AGENT_PROMPT = """You are a skilled interviewer tasked with judging an initial screening call. Decide based on user responses if the candidate clears this round. Provide a final result (Pass: True / Fail: False). Here is the job description:"""
+DECIDER_AGENT_PROMPT = """You are a skilled interviewer tasked with judging an initial screening call. Decide based on user responses if the candidate clears this round. Provide a final result (Pass: True / Fail: False).
+
+If a previous attempt at the same questions is provided, factor in whether the candidate has addressed the
+weaknesses raised in the previous feedback when making your decision. If no previous attempt is provided,
+judge this attempt on its own merits. Here is the job description:"""

@@ -3,12 +3,16 @@ from langgraph.graph import StateGraph, START, END
 from typing_extensions import TypedDict
 from langgraph.types import interrupt, Command
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.store.base import BaseStore
 from langchain_core.messages import HumanMessage, SystemMessage
 from .job_description import JOB_DESCRIPTION
 from dotenv import load_dotenv
 from langchain_core.callbacks import get_usage_metadata_callback
 from prompts.screening_agent_prompts import FEEDBACK_AGENT_PROMPT, DECIDER_AGENT_PROMPT
+import hashlib
 import json
+import time
+import uuid
 
 load_dotenv()
 
@@ -60,6 +64,8 @@ class ScreeningAgent(TypedDict):
     feedback_input: dict
     feedback_output: FeedbackOutput
     user_id: str
+    menu_choice: str
+    previous_attempt: dict
 
 
 def generate_questions(state: ScreeningAgent) -> dict:
@@ -110,21 +116,48 @@ def should_continue_asking(state: ScreeningAgent) -> str:
     return "compile_feedback_input"
 
 
-def compile_feedback_input(state: ScreeningAgent) -> dict:
-    """Build the question -> answer mapping once, shared by both downstream agents"""
+async def compile_feedback_input(state: ScreeningAgent, *, store: BaseStore) -> dict:
+    """Build the question -> answer mapping once, shared by both downstream agents.
+
+    Also looks up the most recent prior attempt (if any) for this user + job description
+    so the downstream agents can judge improvement rather than scoring in isolation.
+    """
     questions = state["questions"]
     responses = state["responses"]
     feedback_input = {}
     for i, key in enumerate(questions):
         feedback_input[questions[key]] = responses[i]
 
-    return {"feedback_input": feedback_input}
+    user_id = state["user_id"]
+    jd_hash = hashlib.sha256(state["job_description"].encode()).hexdigest()[:16]
+    items = await store.asearch((user_id, jd_hash))
+
+    previous_attempt = None
+    if items:
+        previous_attempt = max(items, key=lambda item: item.value["timestamp"]).value
+
+    return {"feedback_input": feedback_input, "previous_attempt": previous_attempt}
+
+
+def _feedback_input_text(state: ScreeningAgent) -> str:
+    text = json.dumps(state["feedback_input"], indent=2)
+
+    previous_attempt = state.get("previous_attempt")
+    if previous_attempt:
+        previous_input = dict(zip(previous_attempt["questions"].values(), previous_attempt["responses"]))
+        text += (
+            "\n\nPrevious attempt at these same questions (for comparison):\n"
+            f"{json.dumps(previous_input, indent=2)}\n\n"
+            "Previous feedback given:\n"
+            f"{previous_attempt['feedback_output']}"
+        )
+
+    return text
 
 
 def decider_agent(state: ScreeningAgent) -> dict:
     """Decides if the candidate cleared the interview"""
     job_description = state["job_description"]
-    feedback_input = state["feedback_input"]
 
     model = ChatAnthropic(model="claude-sonnet-4-5")
     model = model.with_structured_output(DecisionOutput, method="json_schema")
@@ -136,7 +169,7 @@ def decider_agent(state: ScreeningAgent) -> dict:
         }]),
         HumanMessage(content=[{
             "type": "text",
-            "text": json.dumps(feedback_input, indent=2),
+            "text": _feedback_input_text(state),
             "cache_control": {"type": "ephemeral"}
         }])
     ])
@@ -146,8 +179,6 @@ def decider_agent(state: ScreeningAgent) -> dict:
 
 def feedback_agent(state: ScreeningAgent) -> dict:
     """Generate feedback for the user's answers"""
-    feedback_input = state["feedback_input"]
-
     model = ChatAnthropic(model="claude-sonnet-4-5")
     model = model.with_structured_output(FeedbackOutput, method="json_schema")
 
@@ -158,12 +189,48 @@ def feedback_agent(state: ScreeningAgent) -> dict:
         }]),
         HumanMessage(content=[{
             "type": "text",
-            "text": json.dumps(feedback_input, indent=2),
+            "text": _feedback_input_text(state),
             "cache_control": {"type": "ephemeral"}
         }])
     ])
 
     return {"feedback_output": response["feedback"]}
+
+
+async def present_results(state: ScreeningAgent, *, store: BaseStore) -> dict:
+    """Persist the completed attempt to long-term memory, keyed by user + job description"""
+    user_id = state["user_id"]
+    job_description = state["job_description"]
+    jd_hash = hashlib.sha256(job_description.encode()).hexdigest()[:16]
+    namespace = (user_id, jd_hash)
+
+    attempt = {
+        "job_description": job_description,
+        "questions": state["questions"],
+        "responses": state["responses"],
+        "feedback_output": state["feedback_output"],
+        "result": state["result"],
+        "timestamp": time.time(),
+    }
+
+    await store.aput(namespace, str(uuid.uuid4()), attempt)
+
+    choice = interrupt({
+        "menu": ["practice_again", "exit"],
+        "result": state["result"],
+        "feedback_output": state["feedback_output"],
+    })
+
+    if choice == "practice_again":
+        return {"menu_choice": choice, "responses": []}
+
+    return {"menu_choice": choice}
+
+
+def route_after_menu(state: ScreeningAgent) -> str:
+    if state.get("menu_choice") == "practice_again":
+        return "ask_questions"
+    return END
 
 
 # Graph Definition
@@ -175,6 +242,7 @@ graph.add_node("ask_questions", ask_questions)
 graph.add_node("compile_feedback_input", compile_feedback_input)
 graph.add_node("feedback_agent", feedback_agent)
 graph.add_node("decider_agent", decider_agent)
+graph.add_node("present_results", present_results)
 
 # add edges
 graph.add_edge(START, "generate_questions")
@@ -184,11 +252,14 @@ graph.add_conditional_edges("ask_questions", should_continue_asking)
 graph.add_edge("compile_feedback_input", "feedback_agent")
 graph.add_edge("compile_feedback_input", "decider_agent")
 
-graph.add_edge("feedback_agent", END)
-graph.add_edge("decider_agent", END)
+graph.add_edge("feedback_agent", "present_results")
+graph.add_edge("decider_agent", "present_results")
+graph.add_conditional_edges("present_results", route_after_menu)
 
 if __name__ == "__main__":
-    compiled_graph = graph.compile(checkpointer=MemorySaver())
+    from langgraph.store.memory import InMemoryStore
+
+    compiled_graph = graph.compile(checkpointer=MemorySaver(), store=InMemoryStore())
     config = {"configurable": {"thread_id": "session-1"}}
 
     with get_usage_metadata_callback() as cb:
