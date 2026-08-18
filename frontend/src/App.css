@@ -1,0 +1,118 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #121218;
+  color: #e8e8f0;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+.app {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 48px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+
+.panel {
+  width: 100%;
+  background: #1b1b26;
+  border: 1px solid #2c2c3a;
+  border-radius: 16px;
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+  color: #b7b7c8;
+}
+
+input,
+textarea {
+  background: #101018;
+  border: 1px solid #33334a;
+  border-radius: 8px;
+  color: #e8e8f0;
+  padding: 10px 12px;
+  font-family: inherit;
+  font-size: 15px;
+  resize: vertical;
+}
+
+input:focus,
+textarea:focus {
+  outline: 2px solid #6d5efc;
+}
+
+button {
+  background: #6d5efc;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 18px;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button:not(:disabled):hover {
+  background: #7f70ff;
+}
+
+.choice-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.answer-block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.question {
+  font-size: 18px;
+  line-height: 1.5;
+}
+
+.transcript {
+  min-height: 60px;
+  padding: 10px;
+  border: 1px dashed #33334a;
+  border-radius: 8px;
+}
+
+.transcript.listening {
+  color: #a6a6ff;
+}
+
+.feedback {
+  white-space: pre-wrap;
+  font-family: inherit;
+  background: #101018;
+  border-radius: 8px;
+  padding: 16px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.error {
+  color: #ff8a8a;
+  font-size: 14px;
+}
