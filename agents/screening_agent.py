@@ -16,6 +16,15 @@ import uuid
 
 load_dotenv()
 
+
+def memory_namespace(user_id: str, job_description: str) -> tuple[str, str]:
+    """Namespace labels for the long-term store. Hashed because store namespace labels
+    can't contain periods (or other special characters), which real user_ids like emails do.
+    """
+    user_hash = hashlib.sha256(user_id.encode()).hexdigest()[:16]
+    jd_hash = hashlib.sha256(job_description.encode()).hexdigest()[:16]
+    return (user_hash, jd_hash)
+
 '''
 Screening Graph:
 Start -> Generate Questions -> Ask Questions -> Compile Feedback Input -> [Feedback Agent, Decider Agent] (parallel) -> End
@@ -128,9 +137,8 @@ async def compile_feedback_input(state: ScreeningAgent, *, store: BaseStore) -> 
     for i, key in enumerate(questions):
         feedback_input[questions[key]] = responses[i]
 
-    user_id = state["user_id"]
-    jd_hash = hashlib.sha256(state["job_description"].encode()).hexdigest()[:16]
-    items = await store.asearch((user_id, jd_hash))
+    namespace = memory_namespace(state["user_id"], state["job_description"])
+    items = await store.asearch(namespace)
 
     previous_attempt = None
     if items:
@@ -199,10 +207,8 @@ def feedback_agent(state: ScreeningAgent) -> dict:
 
 async def present_results(state: ScreeningAgent, *, store: BaseStore) -> dict:
     """Persist the completed attempt to long-term memory, keyed by user + job description"""
-    user_id = state["user_id"]
     job_description = state["job_description"]
-    jd_hash = hashlib.sha256(job_description.encode()).hexdigest()[:16]
-    namespace = (user_id, jd_hash)
+    namespace = memory_namespace(state["user_id"], job_description)
 
     attempt = {
         "job_description": job_description,
