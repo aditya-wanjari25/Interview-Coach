@@ -1,16 +1,21 @@
 import os
 import uuid
 from contextlib import asynccontextmanager
+import httpx
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from langgraph.types import Command
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from langgraph.store.postgres.aio import AsyncPostgresStore  
+from langgraph.store.postgres.aio import AsyncPostgresStore
 from psycopg_pool import AsyncConnectionPool
 from typing import Optional
 from agents.screening_agent import graph
 
 DATABASE_URL = os.environ["DATABASE_URL"]
+ELEVENLABS_API_KEY = os.environ["ELEVENLABS_API_KEY"]
+ELEVENLABS_VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
 
 
 @asynccontextmanager
@@ -31,10 +36,21 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 class StartInterviewRequest(BaseModel):
     job_description: str
     user_id: str
+
+
+class SpeakRequest(BaseModel):
+    text: str
 
 
 class StartInterviewResponse(BaseModel):
@@ -57,6 +73,29 @@ class AnswerResponse(BaseModel):
 @app.get("/")
 def root():
     return {"hello": "this is root!"}
+
+
+@app.post("/interview/speak")
+async def speak(body: SpeakRequest):
+    """Proxies text-to-speech through ElevenLabs so the API key never reaches the browser."""
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}",
+            headers={
+                "xi-api-key": ELEVENLABS_API_KEY,
+                "Content-Type": "application/json",
+            },
+            json={
+                "text": body.text,
+                "model_id": "eleven_multilingual_v2",
+            },
+            timeout=60.0,
+        )
+
+    if response.status_code != 200:
+        raise HTTPException(status_code=502, detail=response.text)
+
+    return StreamingResponse(iter([response.content]), media_type="audio/mpeg")
 
 @app.post("/interview/start", response_model=StartInterviewResponse)
 async def start_interview(request: Request, body: StartInterviewRequest):
@@ -86,10 +125,14 @@ async def start_interview(request: Request, body: StartInterviewRequest):
 async def submit_answer(request: Request, body: AnswerRequest):
     config = {"configurable": {"thread_id": body.session_id}}
 
+    state = await request.app.state.compiled_graph.aget_state(config)
+    if not state.values:
+        raise HTTPException(status_code=404, detail="Session not found or already completed")
+
     try:
         result = await request.app.state.compiled_graph.ainvoke(Command(resume=body.answer), config=config)
-    except Exception:
-        raise HTTPException(status_code=404, detail="Session not found or already completed")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
 
     if "__interrupt__" in result:
         payload = result["__interrupt__"][0].value
