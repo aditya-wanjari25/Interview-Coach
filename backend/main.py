@@ -11,7 +11,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.store.postgres.aio import AsyncPostgresStore
 from psycopg_pool import AsyncConnectionPool
 from typing import Optional
-from agents.screening_agent import graph
+from agents.screening_agent import graph, user_namespace_hash
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 ELEVENLABS_API_KEY = os.environ["ELEVENLABS_API_KEY"]
@@ -70,9 +70,63 @@ class AnswerResponse(BaseModel):
     result: Optional[bool] = None
     feedback_output: Optional[str] = None
 
+
+class JobSummary(BaseModel):
+    jd_hash: str
+    job_description: str
+    attempt_count: int
+    last_attempt_at: float
+    last_result: Optional[bool] = None
+
+
+class Attempt(BaseModel):
+    job_description: str
+    questions: dict
+    responses: list
+    feedback_output: str
+    result: bool
+    timestamp: float
+
 @app.get("/")
 def root():
     return {"hello": "this is root!"}
+
+
+@app.get("/users/{user_id}/jobs", response_model=list[JobSummary])
+async def list_jobs(user_id: str, request: Request):
+    store = request.app.state.store
+    user_hash = user_namespace_hash(user_id)
+    namespaces = await store.alist_namespaces(prefix=(user_hash,))
+
+    jobs = []
+    for namespace in namespaces:
+        items = await store.asearch(namespace)
+        if not items:
+            continue
+        latest = max(items, key=lambda item: item.value["timestamp"])
+        jobs.append(
+            JobSummary(
+                jd_hash=namespace[1],
+                job_description=latest.value["job_description"],
+                attempt_count=len(items),
+                last_attempt_at=latest.value["timestamp"],
+                last_result=latest.value.get("result"),
+            )
+        )
+
+    jobs.sort(key=lambda job: job.last_attempt_at, reverse=True)
+    return jobs
+
+
+@app.get("/users/{user_id}/jobs/{jd_hash}/attempts", response_model=list[Attempt])
+async def list_attempts(user_id: str, jd_hash: str, request: Request):
+    store = request.app.state.store
+    user_hash = user_namespace_hash(user_id)
+    items = await store.asearch((user_hash, jd_hash))
+
+    attempts = [Attempt(**item.value) for item in items]
+    attempts.sort(key=lambda attempt: attempt.timestamp, reverse=True)
+    return attempts
 
 
 @app.post("/interview/speak")

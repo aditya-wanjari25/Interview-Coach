@@ -17,13 +17,19 @@ import uuid
 load_dotenv()
 
 
+def user_namespace_hash(user_id: str) -> str:
+    return hashlib.sha256(user_id.encode()).hexdigest()[:16]
+
+
+def job_namespace_hash(job_description: str) -> str:
+    return hashlib.sha256(job_description.encode()).hexdigest()[:16]
+
+
 def memory_namespace(user_id: str, job_description: str) -> tuple[str, str]:
     """Namespace labels for the long-term store. Hashed because store namespace labels
     can't contain periods (or other special characters), which real user_ids like emails do.
     """
-    user_hash = hashlib.sha256(user_id.encode()).hexdigest()[:16]
-    jd_hash = hashlib.sha256(job_description.encode()).hexdigest()[:16]
-    return (user_hash, jd_hash)
+    return (user_namespace_hash(user_id), job_namespace_hash(job_description))
 
 '''
 Screening Graph:
