@@ -1,10 +1,10 @@
 .voice-orb {
   display: block;
   margin: 0 auto;
-  filter: drop-shadow(0 0 24px rgba(124, 92, 255, 0.35));
+  filter: drop-shadow(0 0 24px rgba(45, 212, 191, 0.35));
   transition: filter 0.3s ease;
 }
 
 .voice-orb--speaking {
-  filter: drop-shadow(0 0 40px rgba(124, 92, 255, 0.6));
+  filter: drop-shadow(0 0 40px rgba(45, 212, 191, 0.6));
 }

@@ -1,19 +1,36 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import VoiceOrb from "./VoiceOrb";
+import Login from "./Login";
+import JobsList from "./JobsList";
+import JobDetail from "./JobDetail";
 import {
   startInterview,
   submitAnswer,
   fetchSpeechAudioUrl,
+  fetchJobs,
+  fetchAttempts,
   type AnswerResponse,
+  type JobSummary,
+  type Attempt,
 } from "./api";
 import "./App.css";
 
-type Phase = "setup" | "question" | "menu" | "done";
+type Phase = "login" | "jobs" | "job-detail" | "setup" | "question" | "menu" | "done";
 type AnswerMode = "choose" | "typing" | "listening" | "reviewSpoken";
 
+const USER_ID_KEY = "interview-coach:user-id";
+
 function App() {
-  const [phase, setPhase] = useState<Phase>("setup");
-  const [userId, setUserId] = useState("");
+  const [phase, setPhase] = useState<Phase>("login");
+  const [userId, setUserId] = useState<string | null>(null);
+
+  const [jobs, setJobs] = useState<JobSummary[]>([]);
+  const [jobsLoading, setJobsLoading] = useState(false);
+
+  const [selectedJobDescription, setSelectedJobDescription] = useState("");
+  const [attempts, setAttempts] = useState<Attempt[]>([]);
+  const [attemptsLoading, setAttemptsLoading] = useState(false);
+
   const [jobDescription, setJobDescription] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [question, setQuestion] = useState("");
@@ -33,6 +50,57 @@ function App() {
   const speechSupported =
     typeof window !== "undefined" &&
     (window.SpeechRecognition || window.webkitSpeechRecognition) != null;
+
+  // resume login from a previous visit
+  useEffect(() => {
+    const savedUserId = localStorage.getItem(USER_ID_KEY);
+    if (savedUserId) {
+      setUserId(savedUserId);
+      setPhase("jobs");
+    }
+  }, []);
+
+  async function loadJobs(forUserId: string) {
+    setJobsLoading(true);
+    setErrorMsg(null);
+    try {
+      setJobs(await fetchJobs(forUserId));
+    } catch {
+      setErrorMsg("Couldn't load your practice history.");
+    } finally {
+      setJobsLoading(false);
+    }
+  }
+
+  function handleLogin(username: string) {
+    localStorage.setItem(USER_ID_KEY, username);
+    setUserId(username);
+    setPhase("jobs");
+    loadJobs(username);
+  }
+
+  function handleLogout() {
+    localStorage.removeItem(USER_ID_KEY);
+    setUserId(null);
+    setJobs([]);
+    setPhase("login");
+  }
+
+  async function openJob(jdHash: string) {
+    const job = jobs.find((j) => j.jd_hash === jdHash);
+    if (!job || !userId) return;
+    setSelectedJobDescription(job.job_description);
+    setPhase("job-detail");
+    setAttemptsLoading(true);
+    setErrorMsg(null);
+    try {
+      setAttempts(await fetchAttempts(userId, jdHash));
+    } catch {
+      setErrorMsg("Couldn't load attempts for this job.");
+    } finally {
+      setAttemptsLoading(false);
+    }
+  }
 
   async function playQuestion(text: string) {
     try {
@@ -68,12 +136,12 @@ function App() {
     }
   }
 
-  async function handleStart(e: React.FormEvent) {
-    e.preventDefault();
+  async function beginInterview(jd: string) {
+    if (!userId) return;
     setBusy(true);
     setErrorMsg(null);
     try {
-      const res = await startInterview(jobDescription, userId);
+      const res = await startInterview(jd, userId);
       setSessionId(res.session_id);
       setPhase("question");
       setAnswerMode("choose");
@@ -84,6 +152,11 @@ function App() {
     } finally {
       setBusy(false);
     }
+  }
+
+  function handleStartSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    beginInterview(jobDescription);
   }
 
   async function sendAnswer(answer: string) {
@@ -143,6 +216,12 @@ function App() {
     recognitionRef.current?.stop();
   }
 
+  function goToJobs() {
+    setPhase("jobs");
+    setSessionId(null);
+    if (userId) loadJobs(userId);
+  }
+
   return (
     <div className="app">
       <audio
@@ -152,22 +231,45 @@ function App() {
         onPause={() => setSpeaking(false)}
       />
 
-      <VoiceOrb speaking={speaking} />
+      {phase !== "login" && phase !== "jobs" && phase !== "job-detail" && (
+        <VoiceOrb speaking={speaking} />
+      )}
 
       {errorMsg && <p className="error">{errorMsg}</p>}
 
+      {phase === "login" && <Login onLogin={handleLogin} />}
+
+      {phase === "jobs" && (
+        <JobsList
+          jobs={jobs}
+          loading={jobsLoading}
+          onSelectJob={openJob}
+          onNewInterview={() => {
+            setJobDescription("");
+            setPhase("setup");
+          }}
+          onLogout={handleLogout}
+        />
+      )}
+
+      {phase === "job-detail" && (
+        <JobDetail
+          jobDescription={selectedJobDescription}
+          attempts={attempts}
+          loading={attemptsLoading}
+          onBack={() => setPhase("jobs")}
+          onPracticeAgain={() => beginInterview(selectedJobDescription)}
+        />
+      )}
+
       {phase === "setup" && (
-        <form className="panel" onSubmit={handleStart}>
-          <h1>Interview Coach</h1>
-          <label>
-            Your name or email
-            <input
-              value={userId}
-              onChange={(e) => setUserId(e.target.value)}
-              placeholder="you@example.com"
-              required
-            />
-          </label>
+        <form className="panel" onSubmit={handleStartSubmit}>
+          <div className="row-between">
+            <h1>Start Interview</h1>
+            <button type="button" className="ghost" onClick={() => setPhase("jobs")}>
+              Cancel
+            </button>
+          </div>
           <label>
             Job description
             <textarea
@@ -176,6 +278,7 @@ function App() {
               rows={8}
               placeholder="Paste the job description here..."
               required
+              autoFocus
             />
           </label>
           <button type="submit" disabled={busy}>
@@ -263,14 +366,17 @@ function App() {
         <div className="panel">
           <h2>{result ? "You passed this round" : "Not quite there yet"}</h2>
           <pre className="feedback">{feedback}</pre>
-          <button
-            onClick={() => {
-              setPhase("setup");
-              setSessionId(null);
-            }}
-          >
-            Start New Interview
-          </button>
+          <div className="choice-row">
+            <button onClick={goToJobs}>Back to Jobs</button>
+            <button
+              onClick={() => {
+                setJobDescription("");
+                setPhase("setup");
+              }}
+            >
+              Start New Interview
+            </button>
+          </div>
         </div>
       )}
     </div>

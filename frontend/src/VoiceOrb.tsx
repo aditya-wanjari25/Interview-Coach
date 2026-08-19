@@ -22,15 +22,15 @@ export default function VoiceOrb({ speaking }: VoiceOrbProps) {
     let frameId: number;
 
     function draw() {
-      const amplitude = speaking ? 16 : 5;
-      const speed = speaking ? 0.045 : 0.015;
+      const amplitude = speaking ? 7 : 2;
+      const speed = speaking ? 0.025 : 0.01;
       t += speed;
 
       const points: [number, number][] = [];
       for (let i = 0; i < POINTS; i++) {
         const angle = (i / POINTS) * Math.PI * 2;
         const wobble =
-          Math.sin(t * 2 + PHASES[i]) * 0.6 + Math.sin(t * 3.1 + PHASES[i] * 1.9) * 0.4;
+          Math.sin(t * 1.1 + PHASES[i]) * 0.6 + Math.sin(t * 1.7 + PHASES[i] * 1.9) * 0.4;
         const radius = BASE_RADIUS + wobble * amplitude;
         points.push([CENTER + Math.cos(angle) * radius, CENTER + Math.sin(angle) * radius]);
       }
@@ -52,9 +52,9 @@ export default function VoiceOrb({ speaking }: VoiceOrbProps) {
     >
       <defs>
         <radialGradient id="orb-gradient" cx="35%" cy="30%" r="75%">
-          <stop offset="0%" stopColor="#a996ff" />
-          <stop offset="55%" stopColor="#7c5cff" />
-          <stop offset="100%" stopColor="#4b2fd9" />
+          <stop offset="0%" stopColor="#99f6e4" />
+          <stop offset="55%" stopColor="#2dd4bf" />
+          <stop offset="100%" stopColor="#0f766e" />
         </radialGradient>
       </defs>
       <path ref={pathRef} fill="url(#orb-gradient)" />

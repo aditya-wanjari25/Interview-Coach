@@ -51,3 +51,34 @@ export async function fetchSpeechAudioUrl(text: string): Promise<string> {
   const blob = await res.blob();
   return URL.createObjectURL(blob);
 }
+
+export interface JobSummary {
+  jd_hash: string;
+  job_description: string;
+  attempt_count: number;
+  last_attempt_at: number;
+  last_result: boolean | null;
+}
+
+export interface Attempt {
+  job_description: string;
+  questions: Record<string, string>;
+  responses: string[];
+  feedback_output: string;
+  result: boolean;
+  timestamp: number;
+}
+
+export async function fetchJobs(userId: string): Promise<JobSummary[]> {
+  const res = await fetch(`${API_BASE}/users/${encodeURIComponent(userId)}/jobs`);
+  if (!res.ok) throw new Error("Failed to fetch jobs");
+  return res.json();
+}
+
+export async function fetchAttempts(userId: string, jdHash: string): Promise<Attempt[]> {
+  const res = await fetch(
+    `${API_BASE}/users/${encodeURIComponent(userId)}/jobs/${jdHash}/attempts`
+  );
+  if (!res.ok) throw new Error("Failed to fetch attempts");
+  return res.json();
+}

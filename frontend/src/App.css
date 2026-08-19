@@ -52,16 +52,17 @@ textarea {
 
 input:focus,
 textarea:focus {
-  outline: 2px solid #6d5efc;
+  outline: 2px solid #2dd4bf;
 }
 
 button {
-  background: #6d5efc;
-  color: white;
+  background: #14b8a6;
+  color: #05201c;
   border: none;
   border-radius: 8px;
   padding: 10px 18px;
   font-size: 15px;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -71,7 +72,7 @@ button:disabled {
 }
 
 button:not(:disabled):hover {
-  background: #7f70ff;
+  background: #2dd4bf;
 }
 
 .choice-row {
@@ -99,7 +100,7 @@ button:not(:disabled):hover {
 }
 
 .transcript.listening {
-  color: #a6a6ff;
+  color: #5eead4;
 }
 
 .feedback {
@@ -114,5 +115,134 @@ button:not(:disabled):hover {
 
 .error {
   color: #ff8a8a;
+  font-size: 14px;
+}
+
+.row-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.row-between h1,
+.row-between h2 {
+  margin: 0;
+}
+
+button.ghost {
+  background: transparent;
+  color: #b7b7c8;
+  padding: 6px 10px;
+  font-weight: 500;
+}
+
+button.ghost:not(:disabled):hover {
+  background: #2c2c3a;
+  color: #e8e8f0;
+}
+
+.job-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.job-item {
+  border: 1px solid #2c2c3a;
+  border-radius: 10px;
+  padding: 14px 16px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.job-item:hover {
+  border-color: #2dd4bf;
+  background: #1f1f2c;
+}
+
+.job-desc {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.job-desc-full {
+  white-space: pre-wrap;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #cfcfe0;
+}
+
+.job-meta {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  font-size: 13px;
+  color: #8a8aa0;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.badge.pass {
+  background: rgba(45, 212, 191, 0.15);
+  color: #5eead4;
+}
+
+.badge.fail {
+  background: rgba(255, 138, 138, 0.15);
+  color: #ff8a8a;
+}
+
+.attempt {
+  border: 1px solid #2c2c3a;
+  border-radius: 10px;
+  padding: 12px 16px;
+}
+
+.attempt summary {
+  cursor: pointer;
+  font-size: 14px;
+  color: #cfcfe0;
+}
+
+.attempt-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.attempt-body h3 {
+  margin: 12px 0 0;
+  font-size: 14px;
+  color: #8a8aa0;
+}
+
+.qa-pair {
+  border-left: 2px solid #2c2c3a;
+  padding-left: 12px;
+}
+
+.qa-question {
+  margin: 0 0 4px;
+  font-size: 14px;
+  color: #b7b7c8;
+}
+
+.qa-answer {
+  margin: 0;
   font-size: 14px;
 }
